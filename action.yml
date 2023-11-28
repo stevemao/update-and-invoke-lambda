@@ -1,0 +1,39 @@
+name: 'Update and Invoke Lambda'
+description: 'Update AWS Lambda Function Code and Invoke It'
+inputs:
+  function-name:
+    description: 'Name of the Lambda function to update and invoke'
+    required: true
+  image-uri:
+    description: 'URI of the Docker image to update the Lambda function with'
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Set up migration lambda
+      shell: bash
+      run: aws lambda update-function-code --function-name ${{ inputs.function-name }} --image-uri ${{ inputs.image-uri }}
+    - name: Wait until migration lambda is ready
+      shell: bash
+      run: |
+        STATUS="InProgress"
+
+        while [ "$STATUS" = "InProgress" ]; do
+            RESULT=$(aws lambda get-function --function-name ${{ inputs.function-name }})
+            STATUS=$(echo $RESULT | jq -r '.Configuration.LastUpdateStatus')
+            echo $RESULT
+            if [ "$STATUS" = "InProgress" ]; then
+                sleep 1
+            fi
+        done
+    - name: Run migration
+      shell: bash
+      run: aws lambda invoke --function-name ${{ inputs.function-name }} output
+    - name: Show response
+      shell: bash
+      run: |
+        if grep -q '"errorMessage"' output; then
+            cat output
+            exit 2
+        fi
+        cat output
